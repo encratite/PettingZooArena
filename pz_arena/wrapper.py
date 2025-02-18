@@ -13,16 +13,27 @@ class PettingZooWrapper(Env):
 	OBSERVATION_KEY: Final[str] = "observation"
 	ACTION_MASK_KEY: Final[str] = "action_mask"
 
+	# The underlying PettingZoo AEC environment that is being simulated
 	_env: AECEnv
+	# The pre-trained models used to select opponent actions (initially None to select actions randomly)
+	# Only a randomized subset of these is used in each run
 	_opponent_models: list[PZArenaModel] | None
-	_agent_id: AgentID | None
+	# The agent ID that represents the agent that is being trained through this environment
+	# It is chosen randomly after every reset
+	_agent: AgentID | None
+	# This dict maps the agent IDs of opponents to models to be used to select actions
+	# If no pre-trained models are available, it is initially set to None
 	_opponent_model_map: dict[AgentID, PZArenaModel] | None
+	# The reward cumulated for this agent ID, both from own moves as well as opponents' moves
+	# This is necessary because PettingZoo permits returning rewards for more than one agent at a time
+	_reward: float
 
 	def __init__(self, env: AECEnv, opponent_models: list[PZArenaModel] | None = None):
 		self._env = env
 		self._opponent_models = opponent_models
-		self._agent_id = None
+		self._agent = None
 		self._opponent_model_map = None
+		self._reward = 0
 		first_agent = self._get_first_agent()
 		action_space = env.action_space(first_agent)
 		if not isinstance(action_space, Discrete):
@@ -50,9 +61,9 @@ class PettingZooWrapper(Env):
 		if len(env_agents) == 0:
 			raise PZArenaError("Underlying env must have at least one agent")
 		# Choose a random agent ID for the model that is being trained through this env
-		self._agent_id = random.choice(env_agents)
+		self._agent = random.choice(env_agents)
 		# Randomly select a subset of the opponent models for the other agent IDs and store the mapping
-		opponent_ids = [agent_id != self._agent_id for agent_id in env_agents]
+		opponent_ids = [agent_id != self._agent for agent_id in env_agents]
 		opponent_model_count = len(env_agents) - 1
 		if opponent_model_count > len(self._opponent_models):
 			raise PZArenaError("There aren't enough opponent models to train using the underlying PettingZoo environment")
@@ -69,7 +80,18 @@ class PettingZooWrapper(Env):
 			self,
 			action: ActType
 	) -> tuple[ObsType, SupportsFloat, bool, bool, dict[str, Any]]:
-		raise NotImplementedError()
+		assert self._env.agent_selection == self._agent
+		self._perform_action(action)
+		# Perform all opponent moves until it's either our turn again or the env has been terminated
+		# This is convenient for collecting rewards outside our turn and then returning them right away
+		self._perform_opponent_moves()
+		observation = self._env.observe(self._agent)
+		reward = self._reward
+		self._reward = 0
+		terminated = self._terminated()
+		truncated = self._truncated()
+		info = {}
+		return observation, reward, terminated, truncated, info
 
 	# Not part of the Gymnasium API but is used by MaskablePPO from the Stable Baselines3 contributions
 	def action_mask(self) -> list[bool]:
@@ -89,22 +111,41 @@ class PettingZooWrapper(Env):
 		first_agent = self._env.agents[0]
 		return first_agent
 
-	def _perform_opponent_moves(self):
-		raise NotImplementedError()
+	def _terminated(self) -> bool:
+		return self._env.terminations[self._agent]
 
-	def _perform_opponent_move(self):
+	def _truncated(self) -> bool:
+		return self._env.truncations[self._agent]
+
+	def _perform_opponent_moves(self):
+		while self._is_opponent_move():
+			self._single_opponent_move()
+
+	def _is_opponent_move(self) -> bool:
+		terminated = self._terminated()
+		is_opponent_move = self._env.agent_selection != self._agent
+		return not terminated and is_opponent_move
+
+	def _single_opponent_move(self):
+		current_agent = self._env.agent_selection
+		assert self._agent != current_agent
 		action_mask = self.action_mask()
 		discrete_action_space = cast(Discrete, self.action_space)
 		assert len(action_mask) == discrete_action_space.n
 		if self._opponent_models is not None:
-			opponent_model = self._opponent_model_map[self._env.agent_selection]
-			observation = self._env.observe(self._env.agent_selection)
+			# Use pre-trained opponent models to select actions
+			opponent_model = self._opponent_model_map[current_agent]
+			observation = self._env.observe(current_agent)
 			translated_action_mask = np.array([1 if enabled else 0 for enabled in action_mask])
 			action = opponent_model.predict(observation, translated_action_mask)
 		else:
-			# No pre-trained models are available yet, perform a random move
+			# No pre-trained models are available yet, perform a random move for each opponent
 			all_pairs = zip(range(discrete_action_space.n), action_mask)
 			enabled_pairs = filter(lambda pair: pair[1], all_pairs)
 			enabled_actions = [cast(ActType, i) for i, _enabled in enabled_pairs]
 			action = random.choice(enabled_actions)
+		self._perform_action(action)
+
+	def _perform_action(self, action: ActType):
 		self._env.step(action)
+		self._reward += self._env.rewards[self._agent]
