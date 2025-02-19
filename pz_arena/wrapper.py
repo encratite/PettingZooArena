@@ -9,7 +9,7 @@ from pettingzoo.utils.env import AgentID
 from .error import PZArenaError
 from .model import PZArenaModel
 
-class PettingZooWrapper(Env):
+class PZEnvWrapper(Env):
 	OBSERVATION_KEY: Final[str] = "observation"
 	ACTION_MASK_KEY: Final[str] = "action_mask"
 
@@ -94,7 +94,7 @@ class PettingZooWrapper(Env):
 		return observation, reward, terminated, truncated, info
 
 	# Not part of the Gymnasium API but is used by MaskablePPO from the Stable Baselines3 contributions
-	def action_mask(self) -> list[bool]:
+	def action_masks(self) -> list[bool]:
 		observation = self._env.observe(self._env.agent_selection)
 		# PettingZoo uses 0/1 int8 values while Gymnasium expects bool
 		if self.ACTION_MASK_KEY in observation:
@@ -104,6 +104,10 @@ class PettingZooWrapper(Env):
 			discrete_action_space = cast(Discrete, self.action_space)
 			action_mask = [True] * discrete_action_space.n
 		return action_mask
+
+	def reload_models(self) -> None:
+		for model in self._opponent_models:
+			model.load()
 
 	def _get_first_agent(self) -> AgentID:
 		if len(self._env.agents) == 0:
@@ -126,10 +130,10 @@ class PettingZooWrapper(Env):
 		is_opponent_move = self._env.agent_selection != self._agent
 		return not terminated and is_opponent_move
 
-	def _single_opponent_move(self):
+	def _single_opponent_move(self) -> None:
 		current_agent = self._env.agent_selection
 		assert self._agent != current_agent
-		action_mask = self.action_mask()
+		action_mask = self.action_masks()
 		discrete_action_space = cast(Discrete, self.action_space)
 		assert len(action_mask) == discrete_action_space.n
 		if self._opponent_models is not None:
@@ -146,6 +150,6 @@ class PettingZooWrapper(Env):
 			action = random.choice(enabled_actions)
 		self._perform_action(action)
 
-	def _perform_action(self, action: ActType):
+	def _perform_action(self, action: ActType) -> None:
 		self._env.step(action)
 		self._reward += self._env.rewards[self._agent]
