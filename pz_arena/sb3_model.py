@@ -1,20 +1,23 @@
 import os
 import time
-from typing import Union, Optional
+from typing import Union, Optional, Callable, Final
 import numpy as np
-from pettingzoo import AECEnv
+from gymnasium import Env
 from stable_baselines3.common.callbacks import BaseCallback
 from sb3_contrib import MaskablePPO
-from .model import PZArenaModel
-from .wrapper import PZEnvWrapper
+from .model import PZArenaModel, ReloadModelsCallback
+
+TENSORBOARD_LOG: Final[str] = "./tensorboard"
 
 class SB3PPOModel(PZArenaModel):
-	def __init__(self, name: str, env: AECEnv, **kwargs):
-		super().__init__(name, env)
+	def __init__(self, name: str, env: Env, **kwargs):
+		super().__init__(name)
+		self._kwargs = kwargs
 		self._model = MaskablePPO(
 			"MlpPolicy",
-			self.env,
+			env,
 			device="cpu",
+			tensorboard_log=TENSORBOARD_LOG,
 			**kwargs
 		)
 		self._path = os.path.join(PZArenaModel.MODEL_PATH, name)
@@ -27,8 +30,8 @@ class SB3PPOModel(PZArenaModel):
 		print(f"Loading model {self._path}")
 		self._model = MaskablePPO.load(self._path)
 
-	def learn(self):
-		callback = ModelUpdateCallback(self.env, update_frequency=15)
+	def learn(self, reload_models: ReloadModelsCallback):
+		callback = RolloutTimerCallback(reload_models, update_frequency=15)
 		self._model.learn(
 			total_timesteps=1_000_0000,
 			progress_bar=True,
@@ -44,11 +47,10 @@ class SB3PPOModel(PZArenaModel):
 		action, _observation = self._model.predict(observation, action_masks=action_masks)
 		return action
 
-class ModelUpdateCallback(BaseCallback):
-	def __init__(self, model: PZArenaModel, env: PZEnvWrapper, update_frequency: float):
+class RolloutTimerCallback(BaseCallback):
+	def __init__(self, callback: ReloadModelsCallback, update_frequency: float):
 		super().__init__()
-		self._model = model
-		self._env = env
+		self._callback = callback
 		self._update_frequency = update_frequency
 		self._last_update = time.perf_counter()
 
@@ -58,7 +60,6 @@ class ModelUpdateCallback(BaseCallback):
 	def _on_rollout_end(self) -> None:
 		now = time.perf_counter()
 		if now - self._last_update > self._update_frequency:
-			# Some time has passed, store our own model and reload the others to increase the difficulty
-			self._model.save()
-			self._env.reload_models()
+			# Enough time has passed, perform callback to reload models
+			self._callback()
 			self._last_update = now

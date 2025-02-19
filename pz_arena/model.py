@@ -1,18 +1,16 @@
-from typing import Union, Optional, Final
+from typing import Union, Optional, Final, Callable, TypeAlias
 from abc import ABC, abstractmethod
 import numpy as np
-from pettingzoo import AECEnv
-from .wrapper import PZEnvWrapper
+
+ReloadModelsCallback: TypeAlias = Callable[[], None]
 
 class PZArenaModel(ABC):
 	MODEL_PATH: Final[str] = "model"
 
 	name: str
-	env: PZEnvWrapper
 
-	def __init__(self, name: str, env: AECEnv):
+	def __init__(self, name: str):
 		self.name = name
-		self.env = PZEnvWrapper(env)
 
 	@abstractmethod
 	def save(self):
@@ -23,7 +21,7 @@ class PZArenaModel(ABC):
 		pass
 
 	@abstractmethod
-	def learn(self):
+	def learn(self, reload_models: ReloadModelsCallback):
 		pass
 
 	@abstractmethod

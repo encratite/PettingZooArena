@@ -3,7 +3,7 @@ import numpy as np
 from typing import Any, Final, cast
 from gymnasium import Env
 from gymnasium.core import ObsType, ActType, SupportsFloat
-from gymnasium.spaces import Discrete
+from gymnasium.spaces import Discrete, Dict
 from pettingzoo import AECEnv
 from pettingzoo.utils.env import AgentID
 from .error import PZArenaError
@@ -34,14 +34,16 @@ class PZEnvWrapper(Env):
 		self._agent = None
 		self._opponent_model_map = None
 		self._reward = 0
+		# Reset necessary to access metadata required by the Gymnasium API
+		self._env.reset()
 		first_agent = self._get_first_agent()
 		action_space = env.action_space(first_agent)
 		if not isinstance(action_space, Discrete):
 			raise PZArenaError("Only Discrete action spaces are supported")
 		self.action_space = action_space
 		pz_observation_space = env.observation_space(first_agent)
-		if isinstance(pz_observation_space, dict):
-			if self.OBSERVATION_KEY not in pz_observation_space:
+		if isinstance(pz_observation_space, Dict):
+			if self.OBSERVATION_KEY not in pz_observation_space.spaces:
 				raise PZArenaError(f"Expected \"{self.OBSERVATION_KEY}\" key in PettingZoo observation_space dictionary")
 			self.observation_space = pz_observation_space[self.OBSERVATION_KEY]
 		else:
