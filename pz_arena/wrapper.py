@@ -28,9 +28,9 @@ class PZEnvWrapper(Env):
 	# This is necessary because PettingZoo permits returning rewards for more than one agent at a time
 	_reward: float
 
-	def __init__(self, env: AECEnv, opponent_models: list[PZArenaModel] | None = None):
+	def __init__(self, env: AECEnv):
 		self._env = env
-		self._opponent_models = opponent_models
+		self._opponent_models = None
 		self._agent = None
 		self._opponent_model_map = None
 		self._reward = 0
@@ -48,9 +48,15 @@ class PZEnvWrapper(Env):
 			self.observation_space = pz_observation_space[self.OBSERVATION_KEY]
 		else:
 			self.observation_space = pz_observation_space
-		if opponent_models is not None:
-			for model in opponent_models:
-				model.load()
+
+	def set_opponent_models(self, opponent_models: list[PZArenaModel], skip_index: int) -> None:
+		self._opponent_models = []
+		for i in range(len(opponent_models)):
+			if i == skip_index:
+				continue
+			model = opponent_models[i]
+			model.load()
+			self._opponent_models.append(model)
 
 	def reset(
 			self,
@@ -65,16 +71,17 @@ class PZEnvWrapper(Env):
 		# Choose a random agent ID for the model that is being trained through this env
 		self._agent = random.choice(env_agents)
 		# Randomly select a subset of the opponent models for the other agent IDs and store the mapping
-		opponent_ids = [agent_id != self._agent for agent_id in env_agents]
+		opponent_ids = list(filter(lambda agent_id: agent_id != self._agent, env_agents))
 		opponent_model_count = len(env_agents) - 1
 		if opponent_model_count > len(self._opponent_models):
 			raise PZArenaError("There aren't enough opponent models to train using the underlying PettingZoo environment")
 		opponent_models = random.sample(self._opponent_models, k=opponent_model_count)
 		assert len(opponent_ids) == len(opponent_models)
+		self._opponent_model_map = {}
 		for opponent_id, opponent_model in zip(opponent_ids, opponent_models):
 			self._opponent_model_map[opponent_id] = opponent_model
 		self._perform_opponent_moves()
-		observation = self._env.observe(self._env.agent_selection)
+		observation = self._get_observation()
 		info = {}
 		return observation, info
 
@@ -87,7 +94,7 @@ class PZEnvWrapper(Env):
 		# Perform all opponent moves until it's either our turn again or the env has been terminated
 		# This is convenient for collecting rewards outside our turn and then returning them right away
 		self._perform_opponent_moves()
-		observation = self._env.observe(self._agent)
+		observation = self._get_observation()
 		reward = self._reward
 		self._reward = 0
 		terminated = self._terminated()
@@ -122,6 +129,15 @@ class PZEnvWrapper(Env):
 
 	def _truncated(self) -> bool:
 		return self._env.truncations[self._agent]
+
+	def _get_observation(self):
+		assert self._env.agent_selection == self._agent
+		observation = self._env.observe(self._agent)
+		if isinstance(observation, dict):
+			if self.OBSERVATION_KEY not in observation:
+				raise PZArenaError(f"Observation is a dict but lacks \"{self.OBSERVATION_KEY}\" key")
+			observation = observation[self.OBSERVATION_KEY]
+		return observation
 
 	def _perform_opponent_moves(self):
 		while self._is_opponent_move():

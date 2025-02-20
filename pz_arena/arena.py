@@ -1,6 +1,5 @@
 import os
 from glob import glob
-from multiprocessing import Pool
 from .model import PZArenaModel
 from .wrapper import PZEnvWrapper
 
@@ -14,12 +13,8 @@ class PZArena:
 		self._models = models
 		self._resume = resume
 
-	def run(self) -> None:
-		pool_size = len(self._models)
-		with Pool(pool_size) as p:
-			p.map(self._worker, self._models)
-
-	def _worker(self, model: PZArenaModel) -> None:
+	def run(self, model_index: int) -> None:
+		model = self._models[model_index]
 		print(f"Running model {model.name}")
 		self._process_models()
 		model.learn(lambda: self._on_reload_models(model))

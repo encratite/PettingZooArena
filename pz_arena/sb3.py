@@ -9,7 +9,7 @@ from .model import PZArenaModel, ReloadModelsCallback
 
 TENSORBOARD_LOG: Final[str] = "./tensorboard"
 
-class SB3PPOModel(PZArenaModel):
+class PPOModel(PZArenaModel):
 	def __init__(self, name: str, env: Env, **kwargs):
 		super().__init__(name)
 		self._kwargs = kwargs
@@ -27,8 +27,11 @@ class SB3PPOModel(PZArenaModel):
 		self._model.save(self._path)
 
 	def load(self):
-		print(f"Loading model {self._path}")
-		self._model = MaskablePPO.load(self._path)
+		try:
+			self._model = MaskablePPO.load(self._path)
+			print(f"Loaded model {self._path}")
+		except FileNotFoundError:
+			pass
 
 	def learn(self, reload_models: ReloadModelsCallback):
 		callback = RolloutTimerCallback(reload_models, update_frequency=15)
