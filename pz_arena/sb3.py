@@ -1,13 +1,12 @@
 import os
 import time
-from typing import Union, Optional, Final
+from typing import Union, Optional
 import numpy as np
 from gymnasium import Env
 from stable_baselines3.common.callbacks import BaseCallback
 from sb3_contrib import MaskablePPO
 from .model import PZArenaModel, ReloadModelsCallback
-
-TENSORBOARD_LOG: Final[str] = "./tensorboard"
+from .config import Configuration
 
 class PPOModel(PZArenaModel):
 	def __init__(self, name: str, env: Env, **kwargs):
@@ -17,27 +16,24 @@ class PPOModel(PZArenaModel):
 			"MlpPolicy",
 			env,
 			device="cpu",
-			tensorboard_log=TENSORBOARD_LOG,
+			tensorboard_log=Configuration.TENSORBOARD_LOG,
 			**kwargs
 		)
-		self._path = os.path.join(PZArenaModel.MODEL_PATH, name)
+		self._path = os.path.join(Configuration.MODEL_PATH, name)
 
 	def save(self):
-		print(f"Saving model {self._path}")
 		self._model.save(self._path)
 
 	def load(self):
 		try:
 			self._model = MaskablePPO.load(self._path)
-			print(f"Loaded model {self._path}")
 		except FileNotFoundError:
 			pass
 
 	def learn(self, reload_models: ReloadModelsCallback):
-		callback = RolloutTimerCallback(reload_models, update_frequency=15)
+		callback = RolloutTimerCallback(reload_models, update_frequency=Configuration.MODEL_UPDATE_FREQUENCY)
 		self._model.learn(
 			total_timesteps=1_000_0000,
-			progress_bar=True,
 			tb_log_name=self.name,
 			callback=callback
 		)

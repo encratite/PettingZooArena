@@ -5,8 +5,6 @@ import numpy as np
 ReloadModelsCallback: TypeAlias = Callable[[], None]
 
 class PZArenaModel(ABC):
-	MODEL_PATH: Final[str] = "model"
-
 	name: str
 
 	def __init__(self, name: str):

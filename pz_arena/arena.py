@@ -1,8 +1,10 @@
 import os
-from multiprocessing import Lock
+import shutil
+from threading import Lock
 from glob import glob
 from .model import PZArenaModel, ReloadModelsCallback
 from .wrapper import PZEnvWrapper
+from .config import Configuration
 
 class ModelLock:
 	_model: PZArenaModel
@@ -60,7 +62,9 @@ class PZArena:
 				model_lock.load()
 		else:
 			# Delete all previously trained models
-			path = os.path.join(PZArenaModel.MODEL_PATH, "*.zip")
+			path = os.path.join(Configuration.MODEL_PATH, "*.zip")
 			zip_paths = glob(path)
 			for path in zip_paths:
 				os.remove(path)
+			# Delete TensorBoard data
+			shutil.rmtree(Configuration.TENSORBOARD_LOG)

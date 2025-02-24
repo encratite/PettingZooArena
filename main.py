@@ -1,4 +1,5 @@
-from multiprocessing import Pool, Lock
+from threading import Lock
+from multiprocessing import Pool, Manager
 import time
 import thumper
 from typing import Final
@@ -37,18 +38,19 @@ def main() -> None:
 	del env
 	del models
 	if ENABLE_MULTIPROCESSING:
-		pool = Pool(process_count)
-		locks = [Lock() for _ in range(process_count)]
-		arguments = [(i, locks) for i in range(process_count)]
-		try:
-			pool.starmap_async(run_arena, arguments)
-			# Hack to enable shutting down the entire pool by pressing Ctrl + C (without this it just hangs)
-			while True:
-				time.sleep(0.1)
-		except KeyboardInterrupt:
-			print("Shutting down pool")
-			pool.terminate()
-			pool.join()
+		with Manager() as manager:
+			pool = Pool(process_count)
+			locks = [manager.Lock() for _ in range(process_count)]
+			arguments = [(i, locks) for i in range(process_count)]
+			try:
+				pool.starmap_async(run_arena, arguments)
+				# Hack to enable shutting down the entire pool by pressing Ctrl + C (without this it just hangs)
+				while True:
+					time.sleep(0.1)
+			except KeyboardInterrupt:
+				print("Shutting down pool")
+				pool.terminate()
+				pool.join()
 	else:
 		run_arena(0)
 
