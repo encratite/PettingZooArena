@@ -1,6 +1,6 @@
 import os
 import time
-from typing import Union, Optional, Callable, Final
+from typing import Union, Optional, Final
 import numpy as np
 from gymnasium import Env
 from stable_baselines3.common.callbacks import BaseCallback

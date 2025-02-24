@@ -81,7 +81,7 @@ class PZEnvWrapper(Env):
 		for opponent_id, opponent_model in zip(opponent_ids, opponent_models):
 			self._opponent_model_map[opponent_id] = opponent_model
 		self._perform_opponent_moves()
-		observation = self._get_observation()
+		observation, _action_mask = self._get_observation()
 		info = {}
 		return observation, info
 
@@ -94,7 +94,7 @@ class PZEnvWrapper(Env):
 		# Perform all opponent moves until it's either our turn again or the env has been terminated
 		# This is convenient for collecting rewards outside our turn and then returning them right away
 		self._perform_opponent_moves()
-		observation = self._get_observation()
+		observation, _action_mask = self._get_observation()
 		reward = self._reward
 		self._reward = 0
 		terminated = self._terminated()
@@ -105,13 +105,7 @@ class PZEnvWrapper(Env):
 	# Not part of the Gymnasium API but is used by MaskablePPO from the Stable Baselines3 contributions
 	def action_masks(self) -> list[bool]:
 		observation = self._env.observe(self._env.agent_selection)
-		# PettingZoo uses 0/1 int8 values while Gymnasium expects bool
-		if self.ACTION_MASK_KEY in observation:
-			action_mask = [x == 1 for x in observation[self.ACTION_MASK_KEY]]
-		else:
-			# The PettingZoo env doesn't have an action mask, so just enable all actions
-			discrete_action_space = cast(Discrete, self.action_space)
-			action_mask = [True] * discrete_action_space.n
+		action_mask = self._extract_action_mask(observation)
 		return action_mask
 
 	def reload_models(self) -> None:
@@ -130,14 +124,28 @@ class PZEnvWrapper(Env):
 	def _truncated(self) -> bool:
 		return self._env.truncations[self._agent]
 
-	def _get_observation(self):
-		assert self._env.agent_selection == self._agent
-		observation = self._env.observe(self._agent)
+	def _get_observation(self) -> tuple[ObsType | None, list[bool]]:
+		raw_observation = self._env.observe(self._env.agent_selection)
+		observation = self._extract_observation(raw_observation)
+		action_mask = self._extract_action_mask(raw_observation)
+		return observation, action_mask
+
+	def _extract_observation(self, observation: ObsType | None):
 		if isinstance(observation, dict):
 			if self.OBSERVATION_KEY not in observation:
 				raise PZArenaError(f"Observation is a dict but lacks \"{self.OBSERVATION_KEY}\" key")
 			observation = observation[self.OBSERVATION_KEY]
 		return observation
+
+	def _extract_action_mask(self, observation: ObsType | None) -> list[bool]:
+		# PettingZoo uses 0/1 int8 values while Gymnasium expects bool
+		if self.ACTION_MASK_KEY in observation:
+			action_mask = [x == 1 for x in observation[self.ACTION_MASK_KEY]]
+		else:
+			# The PettingZoo env doesn't have an action mask, so just enable all actions
+			discrete_action_space = cast(Discrete, self.action_space)
+			action_mask = [True] * discrete_action_space.n
+		return action_mask
 
 	def _perform_opponent_moves(self):
 		while self._is_opponent_move():
@@ -151,13 +159,12 @@ class PZEnvWrapper(Env):
 	def _single_opponent_move(self) -> None:
 		current_agent = self._env.agent_selection
 		assert self._agent != current_agent
-		action_mask = self.action_masks()
+		observation, action_mask = self._get_observation()
 		discrete_action_space = cast(Discrete, self.action_space)
 		assert len(action_mask) == discrete_action_space.n
 		if self._opponent_models is not None:
 			# Use pre-trained opponent models to select actions
 			opponent_model = self._opponent_model_map[current_agent]
-			observation = self._env.observe(current_agent)
 			translated_action_mask = np.array([1 if enabled else 0 for enabled in action_mask])
 			action = opponent_model.predict(observation, translated_action_mask)
 		else:
