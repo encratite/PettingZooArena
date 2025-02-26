@@ -112,6 +112,10 @@ class PZEnvWrapper(Env):
 		for model in self._opponent_models:
 			model.load()
 
+	@property
+	def agent_index(self) -> int:
+		return self.env.agents.index(self._agent)
+
 	def _get_first_agent(self) -> AgentID:
 		if len(self.env.agents) == 0:
 			raise PZArenaError("No agents in environment")

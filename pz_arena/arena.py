@@ -15,17 +15,17 @@ class ModelLock:
 		self._lock = lock
 
 	@property
-	def name(self):
+	def name(self) -> str:
 		return self._model.name
 
-	def save(self):
+	def save(self) -> None:
 		self._lock.acquire()
 		try:
 			self._model.save()
 		finally:
 			self._lock.release()
 
-	def load(self):
+	def load(self) -> None:
 		self._lock.acquire()
 		try:
 			self._model.load()

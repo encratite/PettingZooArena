@@ -3,7 +3,6 @@ import time
 from typing import Union, Optional, Callable, TypeAlias
 import numpy as np
 from gymnasium import Env
-from pettingzoo import AECEnv
 from stable_baselines3.common.callbacks import BaseCallback
 from sb3_contrib import MaskablePPO
 from .model import PZArenaModel, ReloadModelsCallback
@@ -13,14 +12,12 @@ from stable_baselines3.common.logger import Logger
 OnStepCallback: TypeAlias = Callable[[Logger], None]
 
 class PPOModel(PZArenaModel):
-	raw_env: AECEnv | None
 	on_step: OnStepCallback | None
 	_model: MaskablePPO
 	_path: str
 
-	def __init__(self, name: str, env: Env, raw_env: AECEnv | None = None, on_step: OnStepCallback | None = None, **kwargs):
+	def __init__(self, name: str, env: Env, on_step: OnStepCallback | None = None, **kwargs):
 		super().__init__(name)
-		self.raw_env = raw_env
 		self.on_step = on_step
 		self._model = MaskablePPO(
 			"MlpPolicy",
