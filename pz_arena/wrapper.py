@@ -14,7 +14,7 @@ class PZEnvWrapper(Env):
 	ACTION_MASK_KEY: Final[str] = "action_mask"
 
 	# The underlying PettingZoo AEC environment that is being simulated
-	_env: AECEnv
+	env: AECEnv
 	# The pre-trained models used to select opponent actions (initially None to select actions randomly)
 	# Only a randomized subset of these is used in each run
 	_opponent_models: list[PZArenaModel] | None
@@ -29,13 +29,13 @@ class PZEnvWrapper(Env):
 	_reward: float
 
 	def __init__(self, env: AECEnv):
-		self._env = env
+		self.env = env
 		self._opponent_models = None
 		self._agent = None
 		self._opponent_model_map = None
 		self._reward = 0
 		# Reset necessary to access metadata required by the Gymnasium API
-		self._env.reset()
+		self.env.reset()
 		first_agent = self._get_first_agent()
 		action_space = env.action_space(first_agent)
 		if not isinstance(action_space, Discrete):
@@ -64,8 +64,8 @@ class PZEnvWrapper(Env):
 			seed: int | None = None,
 			options: dict[str, Any] | None = None,
 	) -> tuple[ObsType, dict[str, Any]]:
-		self._env.reset()
-		env_agents = self._env.agents
+		self.env.reset()
+		env_agents = self.env.agents
 		if len(env_agents) == 0:
 			raise PZArenaError("Underlying env must have at least one agent")
 		# Choose a random agent ID for the model that is being trained through this env
@@ -89,7 +89,7 @@ class PZEnvWrapper(Env):
 			self,
 			action: ActType
 	) -> tuple[ObsType, SupportsFloat, bool, bool, dict[str, Any]]:
-		assert self._env.agent_selection == self._agent
+		assert self.env.agent_selection == self._agent
 		self._perform_action(action)
 		# Perform all opponent moves until it's either our turn again or the env has been terminated
 		# This is convenient for collecting rewards outside our turn and then returning them right away
@@ -104,7 +104,7 @@ class PZEnvWrapper(Env):
 
 	# Not part of the Gymnasium API but is used by MaskablePPO from the Stable Baselines3 contributions
 	def action_masks(self) -> list[bool]:
-		observation = self._env.observe(self._env.agent_selection)
+		observation = self.env.observe(self.env.agent_selection)
 		action_mask = self._extract_action_mask(observation)
 		return action_mask
 
@@ -113,19 +113,19 @@ class PZEnvWrapper(Env):
 			model.load()
 
 	def _get_first_agent(self) -> AgentID:
-		if len(self._env.agents) == 0:
+		if len(self.env.agents) == 0:
 			raise PZArenaError("No agents in environment")
-		first_agent = self._env.agents[0]
+		first_agent = self.env.agents[0]
 		return first_agent
 
 	def _terminated(self) -> bool:
-		return self._env.terminations[self._agent]
+		return self.env.terminations[self._agent]
 
 	def _truncated(self) -> bool:
-		return self._env.truncations[self._agent]
+		return self.env.truncations[self._agent]
 
 	def _get_observation(self) -> tuple[ObsType | None, list[bool]]:
-		raw_observation = self._env.observe(self._env.agent_selection)
+		raw_observation = self.env.observe(self.env.agent_selection)
 		observation = self._extract_observation(raw_observation)
 		action_mask = self._extract_action_mask(raw_observation)
 		return observation, action_mask
@@ -153,11 +153,11 @@ class PZEnvWrapper(Env):
 
 	def _is_opponent_move(self) -> bool:
 		terminated = self._terminated()
-		is_opponent_move = self._env.agent_selection != self._agent
+		is_opponent_move = self.env.agent_selection != self._agent
 		return not terminated and is_opponent_move
 
 	def _single_opponent_move(self) -> None:
-		current_agent = self._env.agent_selection
+		current_agent = self.env.agent_selection
 		assert self._agent != current_agent
 		observation, action_mask = self._get_observation()
 		discrete_action_space = cast(Discrete, self.action_space)
@@ -176,5 +176,5 @@ class PZEnvWrapper(Env):
 		self._perform_action(action)
 
 	def _perform_action(self, action: ActType) -> None:
-		self._env.step(action)
-		self._reward += self._env.rewards[self._agent]
+		self.env.step(action)
+		self._reward += self.env.rewards[self._agent]

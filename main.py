@@ -1,33 +1,49 @@
+from typing import Final
+from functools import partial
 from threading import Lock
 from multiprocessing import Pool, Manager
+import threading
 import time
 import thumper
-from typing import Final
+from thumper.stats import ThumperStats
+from stable_baselines3.common.logger import Logger
 from pz_arena.arena import PZArena, ModelLock
 from pz_arena.model import PZArenaModel
 from pz_arena.wrapper import PZEnvWrapper
 from pz_arena.sb3 import PPOModel
 
 # Disable for easier debugging
-ENABLE_MULTIPROCESSING: Final[bool] = True
+ENABLE_MULTIPROCESSING: Final[bool] = False
 
-def get_env_models() -> tuple[PZEnvWrapper, list[PZArenaModel]]:
-	pz_env = thumper.env()
-	env = PZEnvWrapper(pz_env)
+def model_on_step(env: thumper.raw_env, stats: ThumperStats, logger: Logger) -> None:
+	stats.logger = logger
+	stats.on_step(env.last_action)
+
+def get_ppo_model(name, **kwargs) -> PPOModel:
+	raw_env = thumper.raw_env()
+	wrapped_env = thumper.wrap_env(raw_env)
+	env = PZEnvWrapper(wrapped_env)
+	stats = ThumperStats()
+	on_step = partial(model_on_step, raw_env, stats)
+	model = PPOModel(name, env, raw_env, on_step, **kwargs)
+	return model
+
+def get_models() -> list[PZArenaModel]:
 	models = [
-		PPOModel("PPO1", env),
-		PPOModel("PPO2", env),
-		PPOModel("PPO3", env),
-		PPOModel("PPO4", env),
+		get_ppo_model("PPO1", learning_rate=1e-4),
+		get_ppo_model("PPO2", learning_rate=1e-3),
+		get_ppo_model("PPO3", learning_rate=1e-4, gamma=0.997),
+		get_ppo_model("PPO4", learning_rate=3e-4, gamma=0.997, gae_lambda=0.97),
 	]
-	return env, models
+	return models
 
 def run_arena(index: int, locks: list[Lock]) -> None:
-	env, models = get_env_models()
-	env.set_opponent_models(models, index)
+	models = get_models()
+	for model in models:
+		model.env.set_opponent_models(models, index)
 	assert len(models) == len(locks)
 	model_locks = [ModelLock(models[i], locks[i]) for i in range(len(models))]
-	arena = PZArena(env, model_locks, locks)
+	arena = PZArena(env, model_locks)
 	arena.run(index)
 
 def main() -> None:
@@ -52,7 +68,8 @@ def main() -> None:
 				pool.terminate()
 				pool.join()
 	else:
-		run_arena(0)
+		locks = [threading.Lock() for _ in range(process_count)]
+		run_arena(0, locks)
 
 if __name__ == "__main__":
 	main()

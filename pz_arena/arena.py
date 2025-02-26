@@ -67,4 +67,7 @@ class PZArena:
 			for path in zip_paths:
 				os.remove(path)
 			# Delete TensorBoard data
-			shutil.rmtree(Configuration.TENSORBOARD_LOG)
+			try:
+				shutil.rmtree(Configuration.TENSORBOARD_LOG)
+			except FileNotFoundError:
+				pass

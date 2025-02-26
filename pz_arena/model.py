@@ -1,4 +1,4 @@
-from typing import Union, Optional, Final, Callable, TypeAlias
+from typing import Union, Optional, Callable, TypeAlias
 from abc import ABC, abstractmethod
 import numpy as np
 
