@@ -10,7 +10,7 @@ from stable_baselines3.common.logger import Logger
 from pz_arena.arena import PZArena, ModelLock
 from pz_arena.model import PZArenaModel
 from pz_arena.wrapper import PZEnvWrapper
-from pz_arena.sb3_model import SB3Model, PPOModel, DQNModel
+from pz_arena.sb3_model import PPOModel, DQNModel
 
 # Disable for easier debugging
 ENABLE_MULTIPROCESSING: Final[bool] = False
@@ -32,6 +32,8 @@ def get_env_model(name: str, constructor, **kwargs) -> tuple[PZEnvWrapper, PZAre
 def get_env_models() -> list[tuple[PZEnvWrapper, PZArenaModel]]:
 	env_models = [
 		get_env_model("DQN1", DQNModel),
+		get_env_model("DQN2", DQNModel, learning_rate=1e-3),
+		get_env_model("DQN2", DQNModel, gamma=0.998),
 		get_env_model("PPO1", PPOModel, learning_rate=1e-4),
 		get_env_model("PPO2", PPOModel, learning_rate=1e-3),
 		get_env_model("PPO3", PPOModel, learning_rate=1e-4, gamma=0.997),

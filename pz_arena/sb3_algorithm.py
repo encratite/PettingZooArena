@@ -1,44 +1,19 @@
-from typing import Optional, Union
-import numpy as np
+from typing import Optional, Union, Any, cast
 import torch as th
-from torch.nn import functional as F
+from torch import nn
+import numpy as np
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor, FlattenExtractor
+from stable_baselines3.common.type_aliases import PyTorchObs, Schedule
 from stable_baselines3 import DQN
+from stable_baselines3.common.buffers import DictReplayBuffer, ReplayBuffer
 from stable_baselines3.common.noise import ActionNoise
+from stable_baselines3.dqn.policies import DQNPolicy, QNetwork
+from stable_baselines3.dqn.dqn import get_parameters_by_name, get_linear_fn
+from stable_baselines3.her.her_replay_buffer import HerReplayBuffer
 from gymnasium import spaces
+from .wrapper import PZEnvWrapper
 
 class MaskableDQN(DQN):
-	def train(self, gradient_steps: int, batch_size: int = 100) -> None:
-		self.policy.set_training_mode(True)
-		self._update_learning_rate(self.policy.optimizer)
-
-		losses = []
-		for _ in range(gradient_steps):
-			replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)
-
-			with th.no_grad():
-				next_q_values = self.q_net_target(replay_data.next_observations)
-				next_q_values, _ = next_q_values.max(dim=1)
-				next_q_values = next_q_values.reshape(-1, 1)
-				target_q_values = replay_data.rewards + (1 - replay_data.dones) * self.gamma * next_q_values
-
-			current_q_values = self.q_net(replay_data.observations)
-
-			current_q_values = th.gather(current_q_values, dim=1, index=replay_data.actions.long())
-
-			loss = F.smooth_l1_loss(current_q_values, target_q_values)
-			losses.append(loss.item())
-
-			self.policy.optimizer.zero_grad()
-			loss.backward()
-
-			th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
-			self.policy.optimizer.step()
-
-		self._n_updates += gradient_steps
-
-		self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
-		self.logger.record("train/loss", np.mean(losses))
-
 	def predict(
 			self,
 			observation: Union[np.ndarray, dict[str, np.ndarray]],
@@ -84,10 +59,61 @@ class MaskableDQN(DQN):
 			action = buffer_action
 		return action, buffer_action
 
+	def _setup_model(self) -> None:
+		self._setup_lr_schedule()
+		self.set_random_seed(self.seed)
+
+		if self.replay_buffer_class is None:
+			if isinstance(self.observation_space, spaces.Dict):
+				self.replay_buffer_class = DictReplayBuffer
+			else:
+				self.replay_buffer_class = ReplayBuffer
+
+		if self.replay_buffer is None:
+			replay_buffer_kwargs = self.replay_buffer_kwargs.copy()
+			if issubclass(self.replay_buffer_class, HerReplayBuffer):
+				assert self.env is not None, "You must pass an environment when using `HerReplayBuffer`"
+				replay_buffer_kwargs["env"] = self.env
+			self.replay_buffer = self.replay_buffer_class(
+				self.buffer_size,
+				self.observation_space,
+				self.action_space,
+				device=self.device,
+				n_envs=self.n_envs,
+				optimize_memory_usage=self.optimize_memory_usage,
+				**replay_buffer_kwargs,
+			)
+
+		env = self._get_env()
+		self.policy = MaskableDQNPolicy(
+			env,
+			self.observation_space,
+			cast(spaces.Discrete, self.action_space),
+			self.lr_schedule,
+			**self.policy_kwargs,
+		)
+		self.policy = self.policy.to(self.device)
+
+		self._convert_train_freq()
+
+		self._create_aliases()
+		self.batch_norm_stats = get_parameters_by_name(self.q_net, ["running_"])
+		self.batch_norm_stats_target = get_parameters_by_name(self.q_net_target, ["running_"])
+		self.exploration_schedule = get_linear_fn(
+			self.exploration_initial_eps,
+			self.exploration_final_eps,
+			self.exploration_fraction,
+		)
+
+		assert not (self.n_envs > 1 and self.n_envs > self.target_update_interval)
+
 	def _action_mask(self):
-		env = self.env.envs[0].env
+		env = self._get_env()
 		action_mask = env.action_masks()
 		return action_mask
+
+	def _get_env(self) -> PZEnvWrapper:
+		return cast(Any, self.env).envs[0].env
 
 	def _sample_action_space(self):
 		action_mask = self._action_mask()
@@ -95,5 +121,80 @@ class MaskableDQN(DQN):
 			sample = self.action_space.sample()
 			if action_mask[sample]:
 				# A valid action has been sampled
-				break
-		return sample
+				return sample
+
+class MaskableQNetwork(QNetwork):
+	env: PZEnvWrapper
+
+	def __init__(
+		self,
+		env: PZEnvWrapper,
+		observation_space: spaces.Space,
+		action_space: spaces.Discrete,
+		features_extractor: BaseFeaturesExtractor,
+		features_dim: int,
+		net_arch: Optional[list[int]] = None,
+		activation_fn: type[nn.Module] = nn.ReLU,
+		normalize_images: bool = True,
+	) -> None:
+		self.env = env
+		super().__init__(
+			observation_space=observation_space,
+			action_space=action_space,
+			features_extractor=features_extractor,
+			features_dim=features_dim,
+			net_arch=net_arch,
+			activation_fn=activation_fn,
+			normalize_images=normalize_images
+		)
+
+	def _predict(self, observation: PyTorchObs, deterministic: bool = True) -> th.Tensor:
+		assert self.env is not None
+		q_values = self(observation)
+		action_mask = self.env.action_masks()
+		indices = []
+		i = 0
+		for x in action_mask:
+			if not x:
+				indices.append(i)
+			i += 1
+		q_values[0, indices] = float("-inf")
+		action = q_values.argmax(dim=1).reshape(-1)
+		return action
+
+class MaskableDQNPolicy(DQNPolicy):
+	env: PZEnvWrapper
+
+	def __init__(
+			self,
+			env: PZEnvWrapper,
+			observation_space: spaces.Space,
+			action_space: spaces.Discrete,
+			lr_schedule: Schedule,
+			net_arch: Optional[list[int]] = None,
+			activation_fn: type[nn.Module] = nn.ReLU,
+			features_extractor_class: type[BaseFeaturesExtractor] = FlattenExtractor,
+			features_extractor_kwargs: Optional[dict[str, Any]] = None,
+			normalize_images: bool = True,
+			optimizer_class: type[th.optim.Optimizer] = th.optim.Adam,
+			optimizer_kwargs: Optional[dict[str, Any]] = None
+	) -> None:
+		self.env = env
+		super().__init__(
+			observation_space=observation_space,
+			action_space=action_space,
+			lr_schedule=lr_schedule,
+			net_arch=net_arch,
+			activation_fn=activation_fn,
+			features_extractor_class=features_extractor_class,
+			features_extractor_kwargs=features_extractor_kwargs,
+			normalize_images=normalize_images,
+			optimizer_class=optimizer_class,
+			optimizer_kwargs=optimizer_kwargs
+		)
+
+	def make_q_net(self) -> MaskableQNetwork:
+		assert self.env is not None
+		net_args = self._update_features_extractor(self.net_args, features_extractor=None)
+		network = MaskableQNetwork(self.env, **net_args).to(self.device)
+		return network

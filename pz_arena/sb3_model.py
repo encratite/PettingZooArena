@@ -10,7 +10,7 @@ from stable_baselines3.common.logger import Logger
 from sb3_contrib import MaskablePPO
 from .model import PZArenaModel, ReloadModelsCallback
 from .config import Configuration
-from .sb3_algorithm import MaskableDQN
+from .sb3_algorithm import MaskableDQN, MaskableDQNPolicy
 
 OnStepCallback: TypeAlias = Callable[[Logger], None]
 
@@ -80,7 +80,7 @@ class PPOModel(SB3Model):
 class DQNModel(SB3Model):
 	def create_model(self, env: Env, **kwargs) -> BaseAlgorithm:
 		return MaskableDQN(
-			"MlpPolicy",
+			MaskableDQNPolicy,
 			env,
 			device="cpu",
 			tensorboard_log=Configuration.TENSORBOARD_LOG,
