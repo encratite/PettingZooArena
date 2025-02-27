@@ -1,4 +1,4 @@
-from typing import Final
+from typing import Final, cast
 from functools import partial
 from threading import Lock
 from multiprocessing import Pool, Manager
@@ -10,31 +10,32 @@ from stable_baselines3.common.logger import Logger
 from pz_arena.arena import PZArena, ModelLock
 from pz_arena.model import PZArenaModel
 from pz_arena.wrapper import PZEnvWrapper
-from pz_arena.sb3 import PPOModel
+from pz_arena.sb3_model import SB3Model, PPOModel, DQNModel
 
 # Disable for easier debugging
-ENABLE_MULTIPROCESSING: Final[bool] = True
+ENABLE_MULTIPROCESSING: Final[bool] = False
 
 def model_on_step(raw_env: thumper.raw_env, env: PZEnvWrapper, stats: ThumperStats, logger: Logger) -> None:
 	stats.logger = logger
 	index = env.agent_index
 	stats.on_step(raw_env, index)
 
-def get_ppo_model(name, **kwargs) -> tuple[PZEnvWrapper, PPOModel]:
+def get_env_model(name: str, constructor, **kwargs) -> tuple[PZEnvWrapper, PZArenaModel]:
 	raw_env = thumper.raw_env()
 	wrapped_env = thumper.wrap_env(raw_env)
 	env = PZEnvWrapper(wrapped_env)
 	stats = ThumperStats()
 	on_step = partial(model_on_step, raw_env, env, stats)
-	model = PPOModel(name, env, on_step=on_step, **kwargs)
+	model = cast(PZArenaModel, constructor(name, env, on_step=on_step, **kwargs))
 	return env, model
 
 def get_env_models() -> list[tuple[PZEnvWrapper, PZArenaModel]]:
 	env_models = [
-		get_ppo_model("PPO1", learning_rate=1e-4),
-		get_ppo_model("PPO2", learning_rate=1e-3),
-		get_ppo_model("PPO3", learning_rate=1e-4, gamma=0.997),
-		get_ppo_model("PPO4", learning_rate=1e-4, gamma=0.997, gae_lambda=0.97),
+		get_env_model("DQN1", DQNModel),
+		get_env_model("PPO1", PPOModel, learning_rate=1e-4),
+		get_env_model("PPO2", PPOModel, learning_rate=1e-3),
+		get_env_model("PPO3", PPOModel, learning_rate=1e-4, gamma=0.997),
+		get_env_model("PPO4", PPOModel, learning_rate=1e-4, gamma=0.997, gae_lambda=0.97),
 	]
 	return env_models
 
