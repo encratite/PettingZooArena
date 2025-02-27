@@ -32,7 +32,6 @@ class MaskableDQN(DQN):
 				action = np.array(self._sample_action_space())
 		else:
 			action, state = self.policy.predict(observation, state, episode_start, deterministic)
-		print(f"MaskableDQN predict output: {action.item()}")
 		return action, state
 
 	def _sample_action(
@@ -43,13 +42,9 @@ class MaskableDQN(DQN):
 	) -> tuple[np.ndarray, np.ndarray]:
 		if self.num_timesteps < learning_starts and not (self.use_sde and self.use_sde_at_warmup):
 			unscaled_action = np.array([self._sample_action_space() for _ in range(n_envs)])
-			print(f"sample: {unscaled_action.item()}")
 		else:
 			assert self._last_obs is not None, "self._last_obs was not set"
 			unscaled_action, _ = self.predict(self._last_obs, deterministic=False)
-			print(f"predict: {unscaled_action.item()}")
-		action_mask = self._action_mask()
-		assert action_mask[unscaled_action.item()]
 
 		if isinstance(self.action_space, spaces.Box):
 			scaled_action = self.policy.scale_action(unscaled_action)
@@ -126,9 +121,7 @@ class MaskableDQN(DQN):
 			sample = self.action_space.sample()
 			if action_mask[sample]:
 				# A valid action has been sampled
-				break
-		print(f"_sample_action_space: {sample}")
-		return sample
+				return sample
 
 class MaskableQNetwork(QNetwork):
 	env: PZEnvWrapper
@@ -167,8 +160,6 @@ class MaskableQNetwork(QNetwork):
 			i += 1
 		q_values[0, indices] = float("-inf")
 		action = q_values.argmax(dim=1).reshape(-1)
-		assert action_mask[action.item()]
-		print(f"QNetwork _predict: {action.item()}")
 		return action
 
 class MaskableDQNPolicy(DQNPolicy):
