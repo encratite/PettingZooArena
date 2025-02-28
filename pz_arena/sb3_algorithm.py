@@ -47,26 +47,7 @@ class MaskableDQN(DQN):
 		del self.policy.env
 		del self.policy.q_net.env
 		super().save(path, exclude, include)
-		env = self._get_env()
-		self.policy.env = env
-		self.policy.q_net.env = env
-
-	@classmethod
-	def load(
-			cls: type[SelfBaseAlgorithm],
-			path: Union[str, pathlib.Path, io.BufferedIOBase],
-			env: Optional[GymEnv] = None,
-			device: Union[th.device, str] = "auto",
-			custom_objects: Optional[dict[str, Any]] = None,
-			print_system_info: bool = False,
-			force_reset: bool = True,
-			**kwargs,
-	) -> SelfBaseAlgorithm:
-		model = cast(MaskableDQN, DQN.load(path, env, device, custom_objects, print_system_info, force_reset, **kwargs))
-		env = model._get_env()
-		model.policy.env = env
-		model.policy.q_net.env = env
-		return model
+		self._apply_env()
 
 	def _sample_action(
 			self,
@@ -118,15 +99,14 @@ class MaskableDQN(DQN):
 				**replay_buffer_kwargs,
 			)
 
-		env = self._get_env()
 		self.policy = MaskableDQNPolicy(
-			env,
 			self.observation_space,
 			cast(spaces.Discrete, self.action_space),
 			self.lr_schedule,
 			**self.policy_kwargs,
 		)
 		self.policy = self.policy.to(self.device)
+		self._apply_env()
 
 		self._convert_train_freq()
 
@@ -149,6 +129,11 @@ class MaskableDQN(DQN):
 	def _get_env(self) -> PZEnvWrapper:
 		return cast(Any, self.env).envs[0].env
 
+	def _apply_env(self) -> None:
+		env = self._get_env()
+		self.policy.env = env
+		self.policy.q_net.env = env
+
 	def _sample_action_space(self):
 		action_mask = self._action_mask()
 		while True:
@@ -158,29 +143,7 @@ class MaskableDQN(DQN):
 				return sample
 
 class MaskableQNetwork(QNetwork):
-	env: PZEnvWrapper
-
-	def __init__(
-		self,
-		env: PZEnvWrapper,
-		observation_space: spaces.Space,
-		action_space: spaces.Discrete,
-		features_extractor: BaseFeaturesExtractor,
-		features_dim: int,
-		net_arch: Optional[list[int]] = None,
-		activation_fn: type[nn.Module] = nn.ReLU,
-		normalize_images: bool = True,
-	) -> None:
-		self.env = env
-		super().__init__(
-			observation_space=observation_space,
-			action_space=action_space,
-			features_extractor=features_extractor,
-			features_dim=features_dim,
-			net_arch=net_arch,
-			activation_fn=activation_fn,
-			normalize_images=normalize_images
-		)
+	env: PZEnvWrapper | None
 
 	def _predict(self, observation: PyTorchObs, deterministic: bool = True) -> th.Tensor:
 		assert self.env is not None
@@ -197,38 +160,9 @@ class MaskableQNetwork(QNetwork):
 		return action
 
 class MaskableDQNPolicy(DQNPolicy):
-	env: PZEnvWrapper
-
-	def __init__(
-			self,
-			env: PZEnvWrapper,
-			observation_space: spaces.Space,
-			action_space: spaces.Discrete,
-			lr_schedule: Schedule,
-			net_arch: Optional[list[int]] = None,
-			activation_fn: type[nn.Module] = nn.ReLU,
-			features_extractor_class: type[BaseFeaturesExtractor] = FlattenExtractor,
-			features_extractor_kwargs: Optional[dict[str, Any]] = None,
-			normalize_images: bool = True,
-			optimizer_class: type[th.optim.Optimizer] = th.optim.Adam,
-			optimizer_kwargs: Optional[dict[str, Any]] = None
-	) -> None:
-		self.env = env
-		super().__init__(
-			observation_space=observation_space,
-			action_space=action_space,
-			lr_schedule=lr_schedule,
-			net_arch=net_arch,
-			activation_fn=activation_fn,
-			features_extractor_class=features_extractor_class,
-			features_extractor_kwargs=features_extractor_kwargs,
-			normalize_images=normalize_images,
-			optimizer_class=optimizer_class,
-			optimizer_kwargs=optimizer_kwargs
-		)
+	env: PZEnvWrapper | None
 
 	def make_q_net(self) -> MaskableQNetwork:
-		assert self.env is not None
 		net_args = self._update_features_extractor(self.net_args, features_extractor=None)
-		network = MaskableQNetwork(self.env, **net_args).to(self.device)
+		network = MaskableQNetwork(**net_args).to(self.device)
 		return network

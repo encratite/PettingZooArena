@@ -16,25 +16,22 @@ class ModelLock:
 		return self._model.name
 
 	def save(self) -> None:
-		print(f"[{multiprocessing.current_process().name}] Saving model: {self.name}")
-		self._lock.acquire()
 		try:
 			self._model.save()
-		finally:
-			self._lock.release()
-		print(f"[{multiprocessing.current_process().name}] Finished saving model: {self.name}")
+		except Exception as e:
+			self._print(f"Failed to save model: {e}")
 
 	def load(self) -> None:
-		print(f"[{multiprocessing.current_process().name}] Loading model: {self.name}")
-		self._lock.acquire()
 		try:
 			self._model.load()
-		finally:
-			self._lock.release()
-		print(f"[{multiprocessing.current_process().name}] Finished loading model: {self.name}")
+		except Exception as e:
+			self._print(f"Failed to load model: {e}")
 
 	def learn(self, reload_models: ReloadModelsCallback):
 		self._model.learn(reload_models)
+
+	def _print(self, text):
+		print(f"[{multiprocessing.current_process().name} {self.name}] {text}")
 
 class PZArena:
 	_env: PZEnvWrapper
