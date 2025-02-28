@@ -7,10 +7,10 @@ from gymnasium import Env
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.base_class import BaseAlgorithm
 from stable_baselines3.common.logger import Logger
+from stable_baselines3 import DQN
 from sb3_contrib import MaskablePPO
 from .model import PZArenaModel, ReloadModelsCallback
 from .config import Configuration
-from .sb3_algorithm import MaskableDQN, MaskableDQNPolicy
 
 OnStepCallback: TypeAlias = Callable[[Logger], None]
 
@@ -79,8 +79,8 @@ class PPOModel(SB3Model):
 
 class DQNModel(SB3Model):
 	def create_model(self, env: Env, **kwargs) -> BaseAlgorithm:
-		return MaskableDQN(
-			MaskableDQNPolicy,
+		return DQN(
+			"MlpPolicy",
 			env,
 			device="cpu",
 			tensorboard_log=Configuration.TENSORBOARD_LOG,
@@ -89,7 +89,7 @@ class DQNModel(SB3Model):
 
 	def load(self) -> None:
 		try:
-			self._model = MaskableDQN.load(self._path)
+			self._model = DQN.load(self._path)
 		except FileNotFoundError:
 			pass
 

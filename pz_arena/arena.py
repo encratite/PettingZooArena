@@ -27,10 +27,8 @@ class ModelLock:
 	def load(self) -> None:
 		print(f"[{multiprocessing.current_process().name}] Loading model: {self.name}")
 		self._lock.acquire()
-		print(f"[{multiprocessing.current_process().name}] Loading model: {self.name} (acquired lock)")
 		try:
 			self._model.load()
-			print(f"[{multiprocessing.current_process().name}] Loaded model: {self.name}")
 		finally:
 			self._lock.release()
 		print(f"[{multiprocessing.current_process().name}] Finished loading model: {self.name}")
