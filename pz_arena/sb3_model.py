@@ -10,7 +10,7 @@ from stable_baselines3.common.logger import Logger
 from sb3_contrib import MaskablePPO
 from .model import PZArenaModel, ReloadModelsCallback
 from .config import Configuration
-from .sb3_algorithm import MaskableDQN, MaskableDQNPolicy
+from .sb3_algorithm import MaskableDQN, MaskableDQNPolicy, MaskableQNetwork
 
 OnStepCallback: TypeAlias = Callable[[Logger], None]
 
@@ -89,10 +89,22 @@ class DQNModel(SB3Model):
 
 	def load(self) -> None:
 		try:
-			self._model = MaskableDQN.load(self._path)
-			self._model._apply_env()
+			model = cast(MaskableDQN, self._model)
+			path = self._get_path()
+			model.policy.q_net = MaskableQNetwork.load(path)
+			model.apply_env()
 		except FileNotFoundError:
 			pass
+
+	def save(self) -> None:
+		model = cast(MaskableDQN, self._model)
+		del model.policy.q_net.env
+		path = self._get_path()
+		model.policy.q_net.save(path)
+		model.apply_env()
+
+	def _get_path(self) -> str:
+		return f"{self._path}.zip"
 
 class RolloutTimerCallback(BaseCallback):
 	def __init__(self, on_step: OnStepCallback | None, reload_callback: ReloadModelsCallback, update_frequency: float):

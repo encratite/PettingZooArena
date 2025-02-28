@@ -50,13 +50,15 @@ def run_arena(index: int, locks: list[Lock]) -> None:
 
 def cleanup() -> None:
 	# Delete all previously trained models
-	path = os.path.join(Configuration.MODEL_PATH, "*.zip")
-	zip_paths = glob(path)
-	for path in zip_paths:
-		os.remove(path)
+	try:
+		shutil.rmtree(Configuration.MODEL_PATH)
+		os.mkdir(Configuration.MODEL_PATH)
+	except FileNotFoundError:
+		pass
 	# Delete TensorBoard data
 	try:
 		shutil.rmtree(Configuration.TENSORBOARD_LOG)
+		os.mkdir(Configuration.TENSORBOARD_LOG)
 	except FileNotFoundError:
 		pass
 

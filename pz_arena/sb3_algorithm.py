@@ -1,13 +1,7 @@
-import pathlib
-import io
 from typing import Optional, Union, Any, cast
 import torch as th
-from torch import nn
 import numpy as np
-from collections.abc import Iterable
-from stable_baselines3.common.base_class import SelfBaseAlgorithm
-from stable_baselines3.common.torch_layers import BaseFeaturesExtractor, FlattenExtractor
-from stable_baselines3.common.type_aliases import PyTorchObs, Schedule, GymEnv
+from stable_baselines3.common.type_aliases import PyTorchObs
 from stable_baselines3 import DQN
 from stable_baselines3.common.buffers import DictReplayBuffer, ReplayBuffer
 from stable_baselines3.common.noise import ActionNoise
@@ -37,17 +31,6 @@ class MaskableDQN(DQN):
 		else:
 			action, state = self.policy.predict(observation, state, episode_start, deterministic)
 		return action, state
-
-	def save(
-			self,
-			path: Union[str, pathlib.Path, io.BufferedIOBase],
-			exclude: Optional[Iterable[str]] = None,
-			include: Optional[Iterable[str]] = None,
-	) -> None:
-		del self.policy.env
-		del self.policy.q_net.env
-		super().save(path, exclude, include)
-		self._apply_env()
 
 	def _sample_action(
 			self,
@@ -106,7 +89,7 @@ class MaskableDQN(DQN):
 			**self.policy_kwargs,
 		)
 		self.policy = self.policy.to(self.device)
-		self._apply_env()
+		self.apply_env()
 
 		self._convert_train_freq()
 
@@ -129,7 +112,7 @@ class MaskableDQN(DQN):
 	def _get_env(self) -> PZEnvWrapper:
 		return cast(Any, self.env).envs[0].env
 
-	def _apply_env(self) -> None:
+	def apply_env(self) -> None:
 		env = self._get_env()
 		self.policy.env = env
 		self.policy.q_net.env = env
