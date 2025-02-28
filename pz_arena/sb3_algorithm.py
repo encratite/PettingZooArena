@@ -1,9 +1,13 @@
+import pathlib
+import io
 from typing import Optional, Union, Any, cast
 import torch as th
 from torch import nn
 import numpy as np
+from collections.abc import Iterable
+from stable_baselines3.common.base_class import SelfBaseAlgorithm
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor, FlattenExtractor
-from stable_baselines3.common.type_aliases import PyTorchObs, Schedule
+from stable_baselines3.common.type_aliases import PyTorchObs, Schedule, GymEnv
 from stable_baselines3 import DQN
 from stable_baselines3.common.buffers import DictReplayBuffer, ReplayBuffer
 from stable_baselines3.common.noise import ActionNoise
@@ -33,6 +37,36 @@ class MaskableDQN(DQN):
 		else:
 			action, state = self.policy.predict(observation, state, episode_start, deterministic)
 		return action, state
+
+	def save(
+			self,
+			path: Union[str, pathlib.Path, io.BufferedIOBase],
+			exclude: Optional[Iterable[str]] = None,
+			include: Optional[Iterable[str]] = None,
+	) -> None:
+		del self.policy.env
+		del self.policy.q_net.env
+		super().save(path, exclude, include)
+		env = self._get_env()
+		self.policy.env = env
+		self.policy.q_net.env = env
+
+	@classmethod
+	def load(
+			cls: type[SelfBaseAlgorithm],
+			path: Union[str, pathlib.Path, io.BufferedIOBase],
+			env: Optional[GymEnv] = None,
+			device: Union[th.device, str] = "auto",
+			custom_objects: Optional[dict[str, Any]] = None,
+			print_system_info: bool = False,
+			force_reset: bool = True,
+			**kwargs,
+	) -> SelfBaseAlgorithm:
+		model = cast(MaskableDQN, DQN.load(path, env, device, custom_objects, print_system_info, force_reset, **kwargs))
+		env = model._get_env()
+		model.policy.env = env
+		model.policy.q_net.env = env
+		return model
 
 	def _sample_action(
 			self,

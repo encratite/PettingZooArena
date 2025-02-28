@@ -108,10 +108,6 @@ class PZEnvWrapper(Env):
 		action_mask = self._extract_action_mask(observation)
 		return action_mask
 
-	def reload_models(self) -> None:
-		for model in self._opponent_models:
-			model.load()
-
 	@property
 	def agent_index(self) -> int:
 		return self.env.agents.index(self._agent)
