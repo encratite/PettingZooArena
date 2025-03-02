@@ -22,17 +22,18 @@ def model_on_step(raw_env: thumper.raw_env, env: PZEnvWrapper, stats: ThumperSta
 	stats.on_step(raw_env, index)
 
 def get_env_models(index: int) -> tuple[PZEnvWrapper, list[PZArenaModel]]:
-	raw_env = thumper.raw_env()
+	end_of_game_rewards = index == 2 or index == 5
+	raw_env = thumper.raw_env(end_of_game_rewards=end_of_game_rewards)
 	wrapped_env = thumper.wrap_env(raw_env)
 	env = PZEnvWrapper(wrapped_env)
 	stats = ThumperStats()
 	models = [
 		DQNModel("DQN1", env, learning_rate=1e-4),
 		DQNModel("DQN2", env, learning_rate=1e-3),
-		# DQNModel("DQN3", env, learning_rate=1e-4, gamma=0.997),
+		DQNModel("DQN3", env, learning_rate=1e-4),
 		PPOModel("PPO1", env, learning_rate=1e-4),
 		PPOModel("PPO2", env, learning_rate=1e-3),
-		# PPOModel("PPO3", env, learning_rate=1e-4, gamma=0.997, gae_lambda=0.97),
+		PPOModel("PPO3", env, learning_rate=1e-4),
 	]
 	models[index].on_step = partial(model_on_step, raw_env, env, stats)
 	return env, models
