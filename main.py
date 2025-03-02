@@ -1,17 +1,14 @@
 import os
 import shutil
-from glob import glob
 from typing import Final
 from functools import partial
-from threading import Lock
-from multiprocessing import Pool, Manager
-import threading
+from multiprocessing import Pool
 import time
 import thumper
 from thumper.stats import ThumperStats
 from stable_baselines3.common.logger import Logger
 from pz_arena.config import Configuration
-from pz_arena.arena import PZArena, ModelLock
+from pz_arena.arena import PZArena
 from pz_arena.model import PZArenaModel
 from pz_arena.wrapper import PZEnvWrapper
 from pz_arena.sb3_model import PPOModel, DQNModel
@@ -32,20 +29,18 @@ def get_env_models(index: int) -> tuple[PZEnvWrapper, list[PZArenaModel]]:
 	models = [
 		DQNModel("DQN1", env, learning_rate=1e-4),
 		DQNModel("DQN2", env, learning_rate=1e-3),
-		DQNModel("DQN3", env, learning_rate=1e-4, gamma=0.997),
+		# DQNModel("DQN3", env, learning_rate=1e-4, gamma=0.997),
 		PPOModel("PPO1", env, learning_rate=1e-4),
 		PPOModel("PPO2", env, learning_rate=1e-3),
-		PPOModel("PPO3", env, learning_rate=1e-4, gamma=0.997, gae_lambda=0.97),
+		# PPOModel("PPO3", env, learning_rate=1e-4, gamma=0.997, gae_lambda=0.97),
 	]
 	models[index].on_step = partial(model_on_step, raw_env, env, stats)
 	return env, models
 
-def run_arena(index: int, locks: list[Lock]) -> None:
+def run_arena(index: int) -> None:
 	env, models = get_env_models(index)
 	env.set_opponent_models(models, index)
-	assert len(models) == len(locks)
-	model_locks = [ModelLock(models[i], locks[i]) for i in range(len(models))]
-	arena = PZArena(env, model_locks)
+	arena = PZArena(env, models)
 	arena.run(index)
 
 def cleanup() -> None:
@@ -71,22 +66,18 @@ def main() -> None:
 	del env
 	del models
 	if ENABLE_MULTIPROCESSING:
-		with Manager() as manager:
-			pool = Pool(process_count)
-			locks = [manager.Lock() for _ in range(process_count)]
-			arguments = [(i, locks) for i in range(process_count)]
-			try:
-				pool.starmap_async(run_arena, arguments)
-				# Hack to enable shutting down the entire pool by pressing Ctrl + C (without this it just hangs)
-				while True:
-					time.sleep(0.1)
-			except KeyboardInterrupt:
-				print("Shutting down pool")
-				pool.terminate()
-				pool.join()
+		pool = Pool(process_count)
+		try:
+			pool.map_async(run_arena, range(process_count))
+			# Hack to enable shutting down the entire pool by pressing Ctrl + C (without this it just hangs)
+			while True:
+				time.sleep(0.1)
+		except KeyboardInterrupt:
+			print("Shutting down pool")
+			pool.terminate()
+			pool.join()
 	else:
-		locks = [threading.Lock() for _ in range(process_count)]
-		run_arena(0, locks)
+		run_arena(0)
 
 if __name__ == "__main__":
 	main()
