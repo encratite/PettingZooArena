@@ -1,5 +1,7 @@
 import os
 import shutil
+import re
+from glob import glob
 from typing import Final
 from functools import partial
 from multiprocessing import Pool
@@ -44,22 +46,41 @@ def run_arena(index: int) -> None:
 	arena = PZArena(env, models)
 	arena.run(index)
 
-def cleanup() -> None:
-	# Delete all previously trained models
+def remove_directories() -> None:
+	remove_directory(Configuration.MODEL_DIRECTORY)
+	remove_directory(Configuration.MODEL_TEMP_DIRECTORY)
+	remove_directory(Configuration.TENSORBOARD_LOG)
+
+def remove_directory(directory: str) -> None:
 	try:
-		shutil.rmtree(Configuration.MODEL_PATH)
-		os.mkdir(Configuration.MODEL_PATH)
-	except FileNotFoundError:
-		pass
-	# Delete TensorBoard data
-	try:
-		shutil.rmtree(Configuration.TENSORBOARD_LOG)
-		os.mkdir(Configuration.TENSORBOARD_LOG)
+		shutil.rmtree(directory)
+		os.mkdir(directory)
 	except FileNotFoundError:
 		pass
 
+def remove_old_models() -> None:
+	pattern = os.path.join(Configuration.MODEL_DIRECTORY, "*.zip")
+	files = glob(pattern)
+	groups = {}
+	group_pattern = re.compile("^[^ ]+")
+	for file in files:
+		file_name = os.path.basename(file)
+		match = group_pattern.match(file_name)
+		group = match[0]
+		if group not in groups:
+			groups[group] = []
+		groups[group].append(file)
+	for group in groups:
+		files = sorted(groups[group])
+		files_to_delete = max(len(files) - Configuration.MODEL_FILE_LIMIT, 0)
+		if files_to_delete > 0:
+			targets = files[0 : files_to_delete]
+			for file in targets:
+				print(f"Removing old model file: {file}")
+				os.remove(file)
+
 def main() -> None:
-	cleanup()
+	remove_directories()
 	# Retrieve models to determine the number of processes
 	env, models = get_env_models(0)
 	process_count = len(models)
@@ -72,7 +93,8 @@ def main() -> None:
 			pool.map_async(run_arena, range(process_count))
 			# Hack to enable shutting down the entire pool by pressing Ctrl + C (without this it just hangs)
 			while True:
-				time.sleep(0.1)
+				remove_old_models()
+				time.sleep(0.25)
 		except KeyboardInterrupt:
 			print("Shutting down pool")
 			pool.terminate()

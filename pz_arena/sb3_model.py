@@ -1,6 +1,8 @@
 import os
+from glob import glob
 import time
-from typing import Union, Optional, Callable, TypeAlias, cast
+from datetime import datetime
+from typing import Union, Optional, Callable, TypeAlias, Final, cast
 from abc import ABC, abstractmethod
 import numpy as np
 from gymnasium import Env
@@ -15,22 +17,23 @@ from .sb3_algorithm import MaskableDQN, MaskableDQNPolicy, MaskableQNetwork
 OnStepCallback: TypeAlias = Callable[[Logger], None]
 
 class SB3Model(PZArenaModel, ABC):
+	EXTENSION: Final[str] = ".zip"
+
 	on_step: OnStepCallback | None
 	_model: BaseAlgorithm
-	_path: str
 
 	def __init__(self, name: str, env: Env, on_step: OnStepCallback | None = None, **kwargs):
 		super().__init__(name)
 		self.on_step = on_step
 		self._model = self.create_model(env, **kwargs)
-		self._path = os.path.join(Configuration.MODEL_PATH, name)
 
 	@abstractmethod
 	def create_model(self, env: Env, **kwargs) -> BaseAlgorithm:
 		pass
 
+	@abstractmethod
 	def save(self) -> None:
-		self._model.save(self._path)
+		pass
 
 	@abstractmethod
 	def load(self) -> None:
@@ -52,6 +55,21 @@ class SB3Model(PZArenaModel, ABC):
 		action, _observation = self._model.predict(observation)
 		return action
 
+	def _get_file_name(self) -> str:
+		timestamp = datetime.now().strftime("%y%m%d%H%M%S")
+		file_name = f"{self.name} {timestamp}{self.EXTENSION}"
+		return file_name
+
+	def _get_most_recent_model_path(self) -> str | None:
+		pattern = os.path.join(Configuration.MODEL_DIRECTORY, f"{self.name}*.zip")
+		files = glob(pattern)
+		files = sorted(files, reverse=True)
+		if len(files) > 0:
+			target = files[0]
+			return target
+		else:
+			return None
+
 class PPOModel(SB3Model):
 	def create_model(self, env: Env, **kwargs) -> BaseAlgorithm:
 		return MaskablePPO(
@@ -62,11 +80,20 @@ class PPOModel(SB3Model):
 			**kwargs
 		)
 
+	def save(self) -> None:
+		file_name = self._get_file_name()
+		path = os.path.join(Configuration.MODEL_TEMP_DIRECTORY, file_name)
+		print(f"Saving PPO model: {path}")
+		self._model.save(path)
+		source = path
+		destination = os.path.join(Configuration.MODEL_DIRECTORY, file_name)
+		os.rename(source, destination)
+
 	def load(self) -> None:
-		try:
-			self._model = MaskablePPO.load(self._path)
-		except FileNotFoundError:
-			pass
+		path = self._get_most_recent_model_path()
+		if path is not None:
+			print(f"Loading PPO model: {path}")
+			self._model = MaskablePPO.load(path)
 
 	def predict(
 			self,
@@ -88,23 +115,24 @@ class DQNModel(SB3Model):
 		)
 
 	def load(self) -> None:
-		try:
-			model = cast(MaskableDQN, self._model)
-			path = self._get_path()
+		model = cast(MaskableDQN, self._model)
+		path = self._get_most_recent_model_path()
+		if path is not None:
+			print(f"Loading DQN model: {path}")
 			model.policy.q_net = MaskableQNetwork.load(path)
 			model.apply_env()
-		except FileNotFoundError:
-			pass
 
 	def save(self) -> None:
 		model = cast(MaskableDQN, self._model)
 		del model.policy.q_net.env
-		path = self._get_path()
+		file_name = self._get_file_name()
+		path = os.path.join(Configuration.MODEL_TEMP_DIRECTORY, file_name)
+		print(f"Saving DQN model: {path}")
 		model.policy.q_net.save(path)
 		model.apply_env()
-
-	def _get_path(self) -> str:
-		return f"{self._path}.zip"
+		source = path
+		destination = os.path.join(Configuration.MODEL_DIRECTORY, file_name)
+		os.rename(source, destination)
 
 class RolloutTimerCallback(BaseCallback):
 	def __init__(self, on_step: OnStepCallback | None, reload_callback: ReloadModelsCallback, update_frequency: float):
