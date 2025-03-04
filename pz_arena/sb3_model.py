@@ -81,19 +81,23 @@ class PPOModel(SB3Model):
 		)
 
 	def save(self) -> None:
-		file_name = self._get_file_name()
-		path = os.path.join(Configuration.MODEL_TEMP_DIRECTORY, file_name)
-		print(f"Saving PPO model: {path}")
-		self._model.save(path)
-		source = path
-		destination = os.path.join(Configuration.MODEL_DIRECTORY, file_name)
-		os.rename(source, destination)
+		try:
+			file_name = self._get_file_name()
+			path = os.path.join(Configuration.MODEL_TEMP_DIRECTORY, file_name)
+			self._model.save(path)
+			source = path
+			destination = os.path.join(Configuration.MODEL_DIRECTORY, file_name)
+			os.rename(source, destination)
+		except Exception as e:
+			print(f"Failed to save PPO model: {e}")
 
 	def load(self) -> None:
-		path = self._get_most_recent_model_path()
-		if path is not None:
-			print(f"Loading PPO model: {path}")
-			self._model = MaskablePPO.load(path)
+		try:
+			path = self._get_most_recent_model_path()
+			if path is not None:
+				self._model = MaskablePPO.load(path)
+		except Exception as e:
+			print(f"Failed to load PPO model: {e}")
 
 	def predict(
 			self,
@@ -114,25 +118,29 @@ class DQNModel(SB3Model):
 			**kwargs
 		)
 
-	def load(self) -> None:
-		model = cast(MaskableDQN, self._model)
-		path = self._get_most_recent_model_path()
-		if path is not None:
-			print(f"Loading DQN model: {path}")
-			model.policy.q_net = MaskableQNetwork.load(path)
-			model.apply_env()
-
 	def save(self) -> None:
-		model = cast(MaskableDQN, self._model)
-		del model.policy.q_net.env
-		file_name = self._get_file_name()
-		path = os.path.join(Configuration.MODEL_TEMP_DIRECTORY, file_name)
-		print(f"Saving DQN model: {path}")
-		model.policy.q_net.save(path)
-		model.apply_env()
-		source = path
-		destination = os.path.join(Configuration.MODEL_DIRECTORY, file_name)
-		os.rename(source, destination)
+		try:
+			model = cast(MaskableDQN, self._model)
+			del model.policy.q_net.env
+			file_name = self._get_file_name()
+			path = os.path.join(Configuration.MODEL_TEMP_DIRECTORY, file_name)
+			model.policy.q_net.save(path)
+			model.apply_env()
+			source = path
+			destination = os.path.join(Configuration.MODEL_DIRECTORY, file_name)
+			os.rename(source, destination)
+		except Exception as e:
+			print(f"Failed to save DQN model: {e}")
+
+	def load(self) -> None:
+		try:
+			model = cast(MaskableDQN, self._model)
+			path = self._get_most_recent_model_path()
+			if path is not None:
+				model.policy.q_net = MaskableQNetwork.load(path)
+				model.apply_env()
+		except Exception as e:
+			print(f"Failed to load DQN model: {e}")
 
 class RolloutTimerCallback(BaseCallback):
 	def __init__(self, on_step: OnStepCallback | None, reload_callback: ReloadModelsCallback, update_frequency: float):

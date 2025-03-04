@@ -24,18 +24,16 @@ def model_on_step(raw_env: thumper.raw_env, env: PZEnvWrapper, stats: ThumperSta
 	stats.on_step(raw_env, index)
 
 def get_env_models(index: int) -> tuple[PZEnvWrapper, list[PZArenaModel]]:
-	end_of_game_rewards = index == 2 or index == 5
+	end_of_game_rewards = index == 1 or index == 3
 	raw_env = thumper.raw_env(end_of_game_rewards=end_of_game_rewards)
 	wrapped_env = thumper.wrap_env(raw_env)
 	env = PZEnvWrapper(wrapped_env)
 	stats = ThumperStats()
 	models = [
 		DQNModel("DQN1", env, learning_rate=1e-4),
-		DQNModel("DQN2", env, learning_rate=1e-3),
-		DQNModel("DQN3", env, learning_rate=1e-4),
+		DQNModel("DQN2", env, learning_rate=5e-3),
 		PPOModel("PPO1", env, learning_rate=1e-4),
-		PPOModel("PPO2", env, learning_rate=1e-3),
-		PPOModel("PPO3", env, learning_rate=1e-4),
+		PPOModel("PPO2", env, learning_rate=5e-3),
 	]
 	models[index].on_step = partial(model_on_step, raw_env, env, stats)
 	return env, models
@@ -76,7 +74,6 @@ def remove_old_models() -> None:
 		if files_to_delete > 0:
 			targets = files[0 : files_to_delete]
 			for file in targets:
-				print(f"Removing old model file: {file}")
 				os.remove(file)
 
 def main() -> None:
